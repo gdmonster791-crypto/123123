@@ -57,8 +57,8 @@ AbilityUsed.OnServerEvent:Connect(function(player, abilityId)
 		EffectsManager.Apply(player, "Shield", cfg.Duration)
 	end
 
-	-- Кажемо клієнту показати кулдаун
-	UpdateCooldown:FireClient(player, cfg.Cooldown)
+	-- Кажемо клієнту показати кулдаун (тип "Ability")
+	UpdateCooldown:FireClient(player, "Ability", cfg.Cooldown)
 end)
 
 Players.PlayerRemoving:Connect(function(p) cd[p] = nil end)

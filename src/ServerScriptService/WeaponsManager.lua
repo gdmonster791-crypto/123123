@@ -23,6 +23,7 @@ end
 local WeaponHit       = ensureRemote("WeaponHit",   "RemoteEvent")
 local SpecialUsed     = ensureRemote("SpecialUsed",  "RemoteEvent")
 local UpdateCooldown  = ensureRemote("UpdateCooldownEvent", "RemoteEvent")  -- шлемо клієнту кд абілки
+local BackstabEvent   = ensureRemote("BackstabEvent",      "RemoteEvent")  -- для підсвітки ворогів при Backstab
 
 -- === STATE ===
 -- state[player] = { Equipped, Charges, NextAttack, NextCharge, AbilityCD, BackstabUntil, BackstabHits }
@@ -221,8 +222,25 @@ SpecialUsed.OnServerEvent:Connect(function(player)
 		s.BackstabUntil = now + a.Duration
 		s.BackstabHits  = {}
 		EffectsManager.Apply(player, "Haste", a.Duration)
-		-- Кажемо клієнту про кулдаун (для GUI)
-		UpdateCooldown:FireClient(player, a.Cooldown)
+
+		-- Шлемо клієнту список всіх ворогів для підсвітки
+		local enemies = {}
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= player and p.Character then
+				table.insert(enemies, p)
+			end
+		end
+		BackstabEvent:FireClient(player, "Start", enemies, a.Duration)
+
+		-- Плануємо зняття підсвітки після закінчення
+		task.delay(a.Duration, function()
+			if player.Parent then
+				BackstabEvent:FireClient(player, "Stop")
+			end
+		end)
+
+		-- Кажемо клієнту про кулдаун
+		UpdateCooldown:FireClient(player, "Weapon", a.Cooldown)
 	end
 end)
 

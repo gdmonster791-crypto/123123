@@ -38,9 +38,12 @@ local function startCooldownDisplay(cd)
 	end)
 end
 
--- Сервер надсилає кулдаун після успішного використання
-UpdateCooldown.OnClientEvent:Connect(function(cd)
-	startCooldownDisplay(cd)
+-- Сервер надсилає кулдаун: (type, cd) де type = "Ability" | "Weapon"
+UpdateCooldown.OnClientEvent:Connect(function(cdType, cd)
+	if cdType == "Ability" then
+		startCooldownDisplay(cd)
+	end
+	-- Weapon cooldown для Backstab обробляє інший клієнт (опціонально)
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)

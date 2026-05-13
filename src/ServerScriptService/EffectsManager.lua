@@ -50,9 +50,11 @@ local function recompute(player)
 		if cfg.BlockHeal     then blockHeal = true end
 	end
 
-	hum.WalkSpeed = stunned and 0 or (DEFAULT_WALK_SPEED * speedMult)
+	-- НЕ пишемо WalkSpeed — MovementController сам читає SpeedMult/Stunned
+	-- через атрибути і застосовує. Інакше буде конфлікт двох писачів.
 
-	-- Атрибути для WeaponsManager
+	-- Атрибути для WeaponsManager + MovementController
+	player:SetAttribute("SpeedMult",     speedMult)
 	player:SetAttribute("DamageOutMult", damageOut)
 	player:SetAttribute("DamageInMult",  damageIn)
 	player:SetAttribute("Stunned",       stunned)

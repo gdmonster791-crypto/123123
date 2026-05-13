@@ -1,62 +1,89 @@
-# Fighting Game — Roadmap
+# Fighting Game — Мінімальний реліз
+
+## Що готове в коді
+
+- [x] Kitchen Knife: 8 урон, 5 зарядів, 0.8с між ударами, 2с відновлення заряду
+- [x] Backstab (E): підсвітка ворогів, +10% швидкості, 2 удари на ціль, Vulnerability + TearWound
+- [x] Shield (Q): 5с імунітет, кд 20с, ціна 500 монет
+- [x] Магазин — покупка Shield через `BuyAbility:InvokeServer("Shield")`
+- [x] XP/рівні/монети/leaderstats
+- [x] Інтеграція з існуючими remote events (BackstabEvent, UpdateCooldownEvent)
+- [x] EffectsManager не конфліктує з MovementController
 
 ## Куди кидати файли в Roblox Studio
 
+### ReplicatedStorage → створи Folder "Modules"
+| Файл | Тип | Куди |
+|------|-----|------|
+| `WeaponsConfig.lua` | ModuleScript | ReplicatedStorage/Modules |
+| `EffectsConfig.lua` | ModuleScript | ReplicatedStorage/Modules |
+
+### ServerScriptService
+| Файл | Тип |
+|------|-----|
+| `DataManager.lua` | Script |
+| `GameManager.lua` | Script |
+| `AbilityManager.lua` | Script |
+| `ShopManager.lua` | Script |
+| `WeaponsManager.lua` | **ModuleScript** |
+| `EffectsManager.lua` | **ModuleScript** |
+
+### StarterPlayer/StarterPlayerScripts (LocalScript-и)
+- `WeaponClient.client.lua` — ЛКМ удар, E способка
+- `AbilityClient.client.lua` — Q абілка + кулдаун GUI
+- `ChargesClient.client.lua` — заряди в GUI
+- `BackstabClient.client.lua` — підсвітка ворогів при Backstab
+
+### StarterPlayer/StarterCharacterScripts
+- `MovementController.client.lua` — твій рух, оновлений щоб читати ефекти
+
+## Контроли в грі
+
+| Клавіша | Дія |
+|--------|-----|
+| ЛКМ    | Удар мечем |
+| E      | Backstab (спец-абілка меча) |
+| Q      | Shield (абілка гравця) |
+| V      | Toggle курсор (з твого camera скрипта) |
+| LCtrl  | Chill mode (з твого camera скрипта) |
+| LShift | Біг |
+
+## Що потрібно зробити в Studio (вручну)
+
+1. **Kitchen Knife Tool** — назви його `KitchenKnife` (саме так, без пробілу). У тебе він у StarterPack → `Kitchen Knife` — переіменуй.
+2. **ShopGui.KitchenKnifeFolder.KitchenKnife.BuyButton** — прив'яжи до:
+   ```lua
+   local BuyAbility = game.ReplicatedStorage:WaitForChild("BuyAbility")
+   script.Parent.MouseButton1Click:Connect(function()
+       local ok, err = BuyAbility:InvokeServer("Shield")
+       if not ok then warn("Не куплено:", err) end
+   end)
+   ```
+   (Якщо кнопка для покупки Shield — не KitchenKnife, бо KitchenKnife безкоштовний.)
+3. **Енабл API access** у Game Settings → Security → Enable Studio Access to API Services (для DataStore).
+
+## Як працює все разом
+
 ```
-ReplicatedStorage/
-  Modules/                (Folder)
-    WeaponsConfig          (ModuleScript)
-    EffectsConfig          (ModuleScript)
-    AbilitiesConfig        (ModuleScript)
-    PerksConfig            (ModuleScript)
-    ResourcesConfig        (ModuleScript)
-
-ServerScriptService/
-  DataManager              (Script)      — оновлений
-  GameManager              (Script)      — оновлений (виправлено дубль kothSharedPoints)
-  WeaponsManager           (ModuleScript)
-  EffectsManager           (ModuleScript)
-  AbilityManager           (Script)
-  ShopManager              (Script)
-
-StarterPlayer/StarterPlayerScripts/
-  WeaponClient             (LocalScript) — mouse1 = удар, E = способка
-  AbilityClient            (LocalScript) — Q = основна способність гравця
-  ChargesClient            (LocalScript) — апдейт ChargesGui
-  EffectsClient            (LocalScript) — іконки ефектів, сліпота
+Гравець натискає ЛКМ
+  ↓
+WeaponClient raycast з центра екрана → знаходить ціль
+  ↓
+WeaponHit:FireServer(target)
+  ↓
+WeaponsManager перевіряє: заряди, кд, відстань, стан Stun
+  ↓
+EffectsManager.GetDamageOutMult/DamageInMult → множники
+  ↓
+Tool:SetAttribute("CurrentAmmo", new) → ChargesClient бачить зміну
+  ↓
+hum:TakeDamage → якщо 0хп → DataManager.handleDeath → XP + монети
 ```
 
-## Що працює зараз (перший релізабельний зріз)
+## Що далі (після релізу)
 
-- 6 мечів у конфігу (уроне, заряди, кд).
-- Сервер-авторитетні удари з перевіркою відстані та зарядів.
-- Ефекти: Haste, Weakness, Vulnerability, Blindness, Stun, Regeneration, Spikes,
-  TearWound, ElectroMark, Shield, Rage.
-- Базовий шоп (BuyWeapon / EquipWeapon + BuyAbility / EquipAbility).
-- Дроп душ з шансами + автоматичні осколки кожні 10 вбивств відповідним мечем.
-- DataStore для збереження.
-- Абілки гравця: Shield, Rage, Runner (частково — дивись TODO).
-
-## Що зроблено частково / як каркас
-
-- **CloneSword.Clone** — треба окремий модуль з логікою розстановки/телепортів.
-- **Backstab** — підсвітка противників на карті (клієнт ще не малює).
-- **SilentHunter, LastMoment, BadFeeling** — конфіг є, менеджера перків ще нема.
-- **Throw** — працює простим raycast-ом; нема візуалу меча, що летить.
-- **Stealth** — міняє Transparency серверно, але треба ще LocalTransparencyModifier
-  на клієнті чужим гравцям щоб вони бачили напівпрозорого.
-
-## Наступні кроки (рекомендований порядок)
-
-1. Створити Tool-моделі мечів у `ServerStorage/Weapons/<Id>` (назва Tool = ID з конфігу).
-2. Перевірити що `WeaponsManager.Equip` видає Tool у `Backpack` (зараз він лише оновлює state; видачу Tool-а я поки не зробив — хочеш, додам).
-3. Зробити PerksManager (коли будуть моделі і UI).
-4. Доробити CloneSword (окремий модуль `CloneAbility`).
-5. Реалізувати візуал Backstab (highlight усіх противників на клієнті).
-
-## Важливі інваріанти
-
-- **Авторитет на сервері.** Клієнт шле лише тригер (WeaponHit/SpecialUsed). Сервер перевіряє заряди, кулдаун, відстань.
-- **Ефекти читаються централізовано.** Будь-який модуль, який хоче модифікатор, бере з `player:GetAttribute("DamageOutMult")` або `EffectsManager.GetDamageOutMult(player)`.
-- **Шоп бере ціну з конфігу.** Не дублюй ціни в UI — читай з `WeaponsConfig.Get(id).Cost`.
-```
+- [ ] Додати Cleaver (тесак) — для першої "обнови"
+- [ ] Додати Rage/Runner абілки
+- [ ] Додати дроп душ / осколки
+- [ ] Додати перки
+- [ ] Додати анімацію удару для Tool
