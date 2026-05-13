@@ -1,12 +1,24 @@
 -- ServerScriptService > ShopManager (Script)
--- Обробляє покупку мечів і абілок. Ціна описана у WeaponsConfig / AbilitiesConfig.
+-- Мінімальний магазин: покупка абілки Shield.
+-- Для релізу KitchenKnife безкоштовний і вже є у всіх.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local WeaponsConfig   = require(ReplicatedStorage.Modules.WeaponsConfig)
-local AbilitiesConfig = require(ReplicatedStorage.Modules.AbilitiesConfig)
+local function ensure(parent, class, name)
+	local ex = parent:FindFirstChild(name)
+	if ex then return ex end
+	local o = Instance.new(class); o.Name = name; o.Parent = parent
+	return o
+end
 
--- Lazy-load DataManager API (він кладе себе в _G при старті)
+local BuyAbility   = ensure(ReplicatedStorage, "RemoteFunction", "BuyAbility")
+local EquipAbility = ensure(ReplicatedStorage, "RemoteFunction", "EquipAbility")
+
+-- Ціни абілок
+local ABILITY_PRICES = {
+	Shield = 500,
+}
+
 local function waitForDataAPI()
 	local t = 0
 	while not _G.DataAPI and t < 10 do
@@ -15,85 +27,39 @@ local function waitForDataAPI()
 	return _G.DataAPI
 end
 
-local function ensureRemote(name, class)
-	local r = ReplicatedStorage:FindFirstChild(name)
-	if not r then
-		r = Instance.new(class)
-		r.Name = name
-		r.Parent = ReplicatedStorage
-	end
-	return r
-end
-
-local BuyWeapon   = ensureRemote("BuyWeapon",   "RemoteFunction")
-local BuyAbility  = ensureRemote("BuyAbility",  "RemoteFunction")
-local EquipWeapon = ensureRemote("EquipWeapon", "RemoteFunction")
-local EquipAbility= ensureRemote("EquipAbility","RemoteFunction")
-
-local function canAfford(data, cost)
-	if not cost then return true end
-	for key, amount in pairs(cost) do
-		if (data[key] or 0) < amount then
-			return false, "Не вистачає: " .. key
-		end
-	end
-	return true
-end
-
-local function chargeCost(api, player, cost)
-	if not cost then return end
-	for key, amount in pairs(cost) do
-		api.AddResource(player, key, -amount)
-	end
-end
-
-BuyWeapon.OnServerInvoke = function(player, weaponId)
-	local cfg = WeaponsConfig.Get(weaponId)
-	if not cfg then return false, "Немає такого меча" end
-	local api = waitForDataAPI(); if not api then return false, "Data not ready" end
-	local data = api.GetSnapshot(player)
-	if data.OwnedWeapons[weaponId] then return false, "Вже куплено" end
-
-	local ok, err = canAfford(data, cfg.Cost)
-	if not ok then return false, err end
-
-	chargeCost(api, player, cfg.Cost)
-	api.AddWeapon(player, weaponId)
-	return true
-end
-
 BuyAbility.OnServerInvoke = function(player, abilityId)
-	local cfg = AbilitiesConfig.Get(abilityId)
-	if not cfg then return false, "Немає такої абілки" end
-	local api = waitForDataAPI(); if not api then return false, "Data not ready" end
+	local price = ABILITY_PRICES[abilityId]
+	if not price then return false, "Немає такої абілки" end
+
+	local api = waitForDataAPI()
+	if not api then return false, "Data not ready" end
+
 	local data = api.GetSnapshot(player)
+	if not data then return false, "No data" end
 	if data.OwnedAbilities[abilityId] then return false, "Вже куплено" end
 
-	local ok, err = canAfford(data, cfg.Cost)
-	if not ok then return false, err end
+	-- Перевіряємо монети
+	if data.Coins < price then return false, "Не вистачає монет" end
 
-	chargeCost(api, player, cfg.Cost)
+	-- Списуємо
+	local ok = api.SpendCoins(player, price)
+	if not ok then return false, "Не вистачає монет" end
+
 	api.AddAbility(player, abilityId)
-	return true
-end
-
-EquipWeapon.OnServerInvoke = function(player, weaponId)
-	local api = waitForDataAPI(); if not api then return false end
-	local data = api.GetSnapshot(player)
-	if not data.OwnedWeapons[weaponId] then return false, "Не куплено" end
-	api.SetEquippedWeapon(player, weaponId)
-	-- Сповіщаємо WeaponsManager
-	local WeaponsManager = require(script.Parent.WeaponsManager)
-	WeaponsManager.Equip(player, weaponId)
+	api.SetEquippedAbility(player, abilityId)
 	return true
 end
 
 EquipAbility.OnServerInvoke = function(player, abilityId)
-	local api = waitForDataAPI(); if not api then return false end
+	local api = waitForDataAPI()
+	if not api then return false end
 	local data = api.GetSnapshot(player)
+	if not data then return false end
+
 	if abilityId ~= nil and not data.OwnedAbilities[abilityId] then
 		return false, "Не куплено"
 	end
+
 	api.SetEquippedAbility(player, abilityId)
 	return true
 end

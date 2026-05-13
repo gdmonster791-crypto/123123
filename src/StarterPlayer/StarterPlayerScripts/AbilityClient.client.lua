@@ -1,24 +1,56 @@
 -- StarterPlayer > StarterPlayerScripts > AbilityClient (LocalScript)
--- Натискання Q — використати екіпіровану абілку гравця.
+-- Q = використати екіпіровану абілку гравця (Shield для релізу).
+-- Відправляє AbilityUsed:FireServer(abilityId)
+-- Показує кулдаун в PlayerAbilityGui.
 
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AbilityUsed   = ReplicatedStorage:WaitForChild("AbilityUsed")
-local GetPlayerData = ReplicatedStorage:WaitForChild("GetPlayerData")
+local player    = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
-local player = Players.LocalPlayer
+local AbilityUsed      = ReplicatedStorage:WaitForChild("AbilityUsed")
+local GetPlayerData    = ReplicatedStorage:WaitForChild("GetPlayerData")
+local UpdateCooldown   = ReplicatedStorage:WaitForChild("UpdateCooldownEvent")
 
-local function fire()
-	local data = GetPlayerData:InvokeServer()
-	if not data or not data.EquippedAbility then return end
-	AbilityUsed:FireServer(data.EquippedAbility)
+-- GUI елементи (PlayerAbilityGui з скріну)
+local abilityGui    = playerGui:WaitForChild("PlayerAbilityGui")
+local cooldownText  = abilityGui:FindFirstChild("CooldownText", true)
+
+local isOnCooldown = false
+
+local function startCooldownDisplay(cd)
+	if not cooldownText then return end
+	isOnCooldown = true
+	cooldownText.Visible = true
+
+	task.spawn(function()
+		local remaining = cd
+		while remaining > 0 do
+			cooldownText.Text = math.ceil(remaining) .. "с"
+			task.wait(0.5)
+			remaining -= 0.5
+		end
+		cooldownText.Text = ""
+		cooldownText.Visible = false
+		isOnCooldown = false
+	end)
 end
 
-UserInputService.InputBegan:Connect(function(input, gp)
-	if gp then return end
-	if input.KeyCode == Enum.KeyCode.Q then
-		fire()
-	end
+-- Сервер надсилає кулдаун після успішного використання
+UpdateCooldown.OnClientEvent:Connect(function(cd)
+	startCooldownDisplay(cd)
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode ~= Enum.KeyCode.Q then return end
+	if isOnCooldown then return end
+
+	-- Перевіряємо що абілка є
+	local data = GetPlayerData:InvokeServer()
+	if not data or not data.EquippedAbility then return end
+
+	AbilityUsed:FireServer(data.EquippedAbility)
 end)

@@ -1,42 +1,70 @@
 -- StarterPlayer > StarterPlayerScripts > ChargesClient (LocalScript)
--- Отримує ChargesSync (кількість зарядів поточного меча) і апдейтить ChargesGui.
--- Структура GUI з твого скріну:
---   StarterGui/ChargesGui/ChargesTemplate (Frame з ChargesText)
--- Клонуємо шаблон по кількості MaxCharges.
+-- Показує заряди зброї з Tool-атрибутів CurrentAmmo / MaxAmmo.
+-- GUI: StarterGui/ChargesGui/ChargesTemplate/ChargesText
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local ChargesSync = ReplicatedStorage:WaitForChild("ChargesSync")
-
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local gui = playerGui:WaitForChild("ChargesGui")
-local template = gui:WaitForChild("ChargesTemplate")
-template.Visible = false
 
-local containers = {}
+local chargesGui  = playerGui:WaitForChild("ChargesGui")
+local template    = chargesGui:WaitForChild("ChargesTemplate")
+local chargesText = template:WaitForChild("ChargesText")
 
-local function rebuild(max)
-	for _, c in ipairs(containers) do c:Destroy() end
-	containers = {}
-	for i = 1, max do
-		local c = template:Clone()
-		c.Name = "Charge_" .. i
-		c.Visible = true
-		c.Position = UDim2.new(0, (i-1) * (c.Size.X.Offset + 6), 0, 0)
-		c.Parent = gui
-		table.insert(containers, c)
+local currentConnection = nil
+local character = player.Character or player.CharacterAdded:Wait()
+
+local function connectTool(tool)
+	if currentConnection then
+		currentConnection:Disconnect()
+		currentConnection = nil
 	end
+
+	if not tool then
+		chargesText.Text = "Charges: — / —"
+		return
+	end
+
+	local function updateText()
+		local cur = tool:GetAttribute("CurrentAmmo") or 0
+		local max = tool:GetAttribute("MaxAmmo") or 0
+		chargesText.Text = "Charges: " .. cur .. " / " .. max
+	end
+
+	updateText()
+	currentConnection = tool:GetAttributeChangedSignal("CurrentAmmo"):Connect(updateText)
 end
 
-ChargesSync.OnClientEvent:Connect(function(current, max)
-	if #containers ~= max then rebuild(max) end
-	for i, c in ipairs(containers) do
-		local txt = c:FindFirstChild("ChargesText")
-		if txt and txt:IsA("TextLabel") then
-			txt.Text = (i <= current) and "●" or "○"
+local function findTool()
+	local equipped = character:FindFirstChildOfClass("Tool")
+	if equipped then return equipped end
+	local backpack = player:FindFirstChild("Backpack")
+	if backpack then return backpack:FindFirstChildOfClass("Tool") end
+	return nil
+end
+
+local function setupCharacter(char)
+	character = char
+	connectTool(nil)
+
+	char.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then connectTool(child) end
+	end)
+	char.ChildRemoved:Connect(function(child)
+		if child:IsA("Tool") then
+			task.wait(0.1)
+			local backpack = player:FindFirstChild("Backpack")
+			connectTool(backpack and backpack:FindFirstChildOfClass("Tool") or nil)
 		end
-		c.BackgroundTransparency = (i <= current) and 0.2 or 0.6
-	end
+	end)
+
+	-- Якщо Tool вже є
+	task.wait(0.3)
+	connectTool(findTool())
+end
+
+-- Ініціалізація
+setupCharacter(character)
+
+player.CharacterAdded:Connect(function(char)
+	setupCharacter(char)
 end)

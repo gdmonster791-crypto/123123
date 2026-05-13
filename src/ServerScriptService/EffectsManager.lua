@@ -1,16 +1,16 @@
 -- ServerScriptService > EffectsManager (ModuleScript)
 -- Єдиний модуль керування статус-ефектами.
--- Підключається з WeaponsManager/AbilityManager: EffectsManager.Apply(target, "Weakness", 7)
+-- API: EffectsManager.Apply(player, "Haste", 10)
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService        = game:GetService("RunService")
 
-local EffectsConfig = require(ReplicatedStorage.Modules.EffectsConfig)
+local EffectsConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("EffectsConfig"))
 
 local EffectsManager = {}
 
--- Створюємо RemoteEvent для клієнта (візуал/сліпота)
+-- Remote для клієнта (іконки, сліпота тощо)
 local applyEffectRemote = ReplicatedStorage:FindFirstChild("ApplyEffect")
 if not applyEffectRemote then
 	applyEffectRemote = Instance.new("RemoteEvent")
@@ -18,7 +18,7 @@ if not applyEffectRemote then
 	applyEffectRemote.Parent = ReplicatedStorage
 end
 
--- active[player] = { [effectId] = { Expires = t, Config = cfg } }
+-- active[player] = { [effectId] = { Config, Expires } }
 local active = {}
 
 local DEFAULT_WALK_SPEED = 16
@@ -28,44 +28,43 @@ local function getActive(player)
 	return active[player]
 end
 
--- Пересчитуємо стату гравця (швидкість, мульти урона) на основі активних ефектів
+-- Пересчитуємо модифікатори на основі активних ефектів
 local function recompute(player)
 	local char = player.Character
 	if not char then return end
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not hum then return end
 
-	local speedMult   = 1
-	local damageOut   = 1
-	local damageIn    = 1
-	local stunned     = false
-	local blockHeal   = false
+	local speedMult  = 1
+	local damageOut  = 1
+	local damageIn   = 1
+	local stunned    = false
+	local blockHeal  = false
 
 	for _, e in pairs(getActive(player)) do
 		local cfg = e.Config
 		if cfg.SpeedMult     then speedMult = speedMult * cfg.SpeedMult end
 		if cfg.DamageOutMult then damageOut = damageOut * cfg.DamageOutMult end
-		if cfg.DamageInMult  then damageIn  = damageIn * cfg.DamageInMult end
+		if cfg.DamageInMult  then damageIn  = damageIn  * cfg.DamageInMult end
 		if cfg.Stunned       then stunned = true end
 		if cfg.BlockHeal     then blockHeal = true end
 	end
 
-	hum.WalkSpeed = DEFAULT_WALK_SPEED * speedMult
-	if stunned then hum.WalkSpeed = 0 end
+	hum.WalkSpeed = stunned and 0 or (DEFAULT_WALK_SPEED * speedMult)
 
-	-- Зберігаємо модифікатори в атрибутах, щоб WeaponsManager/AbilityManager могли читати
+	-- Атрибути для WeaponsManager
 	player:SetAttribute("DamageOutMult", damageOut)
 	player:SetAttribute("DamageInMult",  damageIn)
 	player:SetAttribute("Stunned",       stunned)
 	player:SetAttribute("BlockHeal",     blockHeal)
 end
 
--- Публічне API
+-- === PUBLIC API ===
 
 function EffectsManager.Apply(player, effectId, duration)
 	if not player or not player.Parent then return end
 	local cfg = EffectsConfig.Get(effectId)
-	if not cfg then warn("[EffectsManager] Unknown effect: " .. tostring(effectId)); return end
+	if not cfg then warn("[EffectsManager] Unknown effect:", effectId); return end
 
 	local eff = getActive(player)
 	eff[effectId] = {
@@ -73,19 +72,15 @@ function EffectsManager.Apply(player, effectId, duration)
 		Expires = os.clock() + (duration or 5),
 	}
 	recompute(player)
-
-	-- Клієнту — для візуалу (сліпота, бордюр екрана, іконка)
 	applyEffectRemote:FireClient(player, "Add", effectId, duration or 5, cfg)
 end
 
 function EffectsManager.Remove(player, effectId)
 	local eff = active[player]
-	if not eff then return end
-	if eff[effectId] then
-		eff[effectId] = nil
-		recompute(player)
-		applyEffectRemote:FireClient(player, "Remove", effectId)
-	end
+	if not eff or not eff[effectId] then return end
+	eff[effectId] = nil
+	recompute(player)
+	applyEffectRemote:FireClient(player, "Remove", effectId)
 end
 
 function EffectsManager.Has(player, effectId)
@@ -96,7 +91,7 @@ end
 function EffectsManager.Clear(player)
 	active[player] = {}
 	recompute(player)
-	applyEffectRemote:FireClient(player, "Clear")
+	pcall(function() applyEffectRemote:FireClient(player, "Clear") end)
 end
 
 function EffectsManager.GetDamageOutMult(player)
@@ -115,7 +110,7 @@ function EffectsManager.CanHeal(player)
 	return player:GetAttribute("BlockHeal") ~= true
 end
 
--- Тіки DOT/HOT + прибирання експайрнутих ефектів
+-- === ТІКИ: прибирання expired + DOT/HOT ===
 local accum = 0
 RunService.Heartbeat:Connect(function(dt)
 	accum += dt
@@ -133,7 +128,7 @@ RunService.Heartbeat:Connect(function(dt)
 			if now >= data.Expires then
 				eff[id] = nil
 				changed = true
-				applyEffectRemote:FireClient(player, "Remove", id)
+				pcall(function() applyEffectRemote:FireClient(player, "Remove", id) end)
 			else
 				local cfg = data.Config
 				if hum and hum.Health > 0 then
